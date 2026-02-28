@@ -13,6 +13,7 @@
  * 5. （可选）配置 PanCheck API 地址到环境变量 PANCHECK_API 中，用于过滤无效链接
  * 6. （可选）配置 PanCheck 是否启用到环境变量 PANCHECK_ENABLED 中（true/false，默认：如果配置了 PANCHECK_API 则启用）
  * 7. （可选）配置 PanCheck 选择的平台到环境变量 PANCHECK_PLATFORMS 中（如：baidu,aliyun,quark）
+ * 8. （可选）配置 PanCheck 选择的平台到环境变量 PANSOU_FILTER 中（如：{"include":["合集","全集"],"exclude":["预告"]}）
  *
  * 使用方法：
  * 1. 在 OmniBox 后台创建爬虫源，选择 JavaScript 类型
@@ -23,11 +24,12 @@
  */
 
 const OmniBox = require("omnibox_sdk");
+const querystring = require('querystring');
 
 // ==================== 配置区域 ====================
 // 盘搜API地址（优先使用环境变量，如果没有则使用默认值）
 // 例如：https://pansou.example.com
-const PANSOU_API = process.env.PANSOU_API || "http://192.168.50.50:1514";
+const PANSOU_API = process.env.PANSOU_API || "";
 
 // 盘搜频道（可选，多个用逗号分隔）
 // 例如：channel1,channel2
@@ -41,10 +43,14 @@ const PANSOU_PLUGINS = process.env.PANSOU_PLUGINS || "";
 // 例如：baidu,aliyun,quark,115,tianyi,xunlei,123,mobile,uc
 const PANSOU_CLOUD_TYPES = process.env.PANSOU_CLOUD_TYPES || "";
 
+// 关键词过滤
+// 过滤配置，用于过滤返回结果。格式：{"include":["关键词1","关键词2"],"exclude":["排除词1","排除词2"]}。include为包含关键词列表（OR关系），exclude为排除关键词列表（OR关系）
+const PANSOU_FILTER = process.env.PANSOU_FILTER || { "include": [""], "exclude": [] };
+
 // PanCheck 配置（可选，用于过滤无效链接）
 // PanCheck API 地址（可选，如果配置了则启用链接检测）
 // 例如：https://pancheck.example.com
-const PANCHECK_API = process.env.PANCHECK_API || "http://192.168.50.50:7024";
+const PANCHECK_API = process.env.PANCHECK_API || "";
 
 // PanCheck 是否启用（可选，默认为 false）
 // 如果配置了 PANCHECK_API，则默认启用
@@ -69,30 +75,35 @@ async function requestPansouAPI(params = {}) {
 
   // 构建 URL
   const url = new URL(`${PANSOU_API}/api/search`);
-  url.searchParams.append("kw", params.keyword || "");
-  url.searchParams.append("refresh", "false");
-  url.searchParams.append("res", "merge");
-  url.searchParams.append("src", "all");
+  const body = {};
+  body.kw = params.keyword || "";
+  body.refresh = false;
+  body.res = "merge";
+  body.src = "all";
 
   // 添加可选参数
   if (PANSOU_CHANNELS) {
-    url.searchParams.append("channels", PANSOU_CHANNELS);
+    body.channels = PANSOU_CHANNELS;
   }
   if (PANSOU_PLUGINS) {
-    url.searchParams.append("plugins", PANSOU_PLUGINS);
+    body.plugins = PANSOU_PLUGINS;
   }
   if (PANSOU_CLOUD_TYPES) {
-    url.searchParams.append("cloud_types", PANSOU_CLOUD_TYPES);
+    body.cloud_types = PANSOU_CLOUD_TYPES;
+  }
+  if (PANSOU_FILTER) {
+    body.filter = PANSOU_FILTER;
   }
 
   OmniBox.log("info", `请求盘搜API: ${url.toString()}`);
 
   try {
     const response = await OmniBox.request(url.toString(), {
-      method: "GET",
+      method: "POST",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      body: body
     });
 
     OmniBox.log("info", `盘搜API响应状态码: ${response.statusCode}`);
