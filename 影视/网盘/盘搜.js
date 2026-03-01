@@ -83,19 +83,19 @@ async function requestPansouAPI(params = {}) {
 
   // 添加可选参数
   if (PANSOU_CHANNELS) {
-    body.channels = PANSOU_CHANNELS;
+    body.channels = PANSOU_CHANNELS.split(',');;
   }
   if (PANSOU_PLUGINS) {
-    body.plugins = PANSOU_PLUGINS;
+    body.plugins = PANSOU_PLUGINS.split(',');;
   }
   if (PANSOU_CLOUD_TYPES) {
-    body.cloud_types = PANSOU_CLOUD_TYPES;
+    body.cloud_types = PANSOU_CLOUD_TYPES.split(',');;
   }
   if (PANSOU_FILTER) {
     body.filter = PANSOU_FILTER;
   }
 
-  OmniBox.log("info", `请求盘搜API: ${url.toString()}`);
+  OmniBox.log("info", `请求盘搜API: ${JSON.stringify(body)}`);
 
   try {
     const response = await OmniBox.request(url.toString(), {
