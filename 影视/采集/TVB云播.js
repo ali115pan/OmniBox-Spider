@@ -1,5 +1,11 @@
-// @name TVB云播[广]
-// @version 1.0.1
+// @name TVB云播
+// @author 
+// @description 刮削：支持，弹幕：支持，嗅探：支持
+// @dependencies: axios
+// @version 1.0.0
+// @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/main/影视/采集/TVB云播.js
+
+
 /**
  * OmniBox 爬虫脚本 - TVB云播[广]
  *
