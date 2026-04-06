@@ -2,7 +2,7 @@
 // @author 梦
 // @description 刮削：未接入，弹幕：未接入，嗅探：不需要（直链优先，支持网盘线路展开）
 // @dependencies
-// @version 1.2.3
+// @version 1.3.0
 // @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/openclaw/影视/采集/LIBVIO.js
 
 const http = require("http");
@@ -14,6 +14,9 @@ const runner = require("spider_runner");
 const HOST = "https://www.libvio.mov";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const DEFAULT_PAGE_SIZE = 12;
+const DRIVE_TYPE_CONFIG = (process.env.DRIVE_TYPE_CONFIG || "quark;uc").split(";").map((t) => t.trim().toLowerCase()).filter(Boolean);
+const SOURCE_NAMES_CONFIG = (process.env.SOURCE_NAMES_CONFIG || "本地代理;服务端代理;直连").split(";").map((s) => s.trim()).filter(Boolean);
+const DRIVE_ORDER = (process.env.DRIVE_ORDER || "baidu;tianyi;quark;uc;115;xunlei;ali;123pan").split(";").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const panShareCache = new Map();
 
 const CLASS_LIST = [
@@ -424,8 +427,10 @@ function inferDriveTypeFromSourceName(name = "") {
 }
 
 function sortPlaySourcesByDriveOrder(playSources = []) {
-    const order = ["baidu", "tianyi", "quark", "uc", "115", "xunlei", "ali", "123pan"];
-    const orderMap = new Map(order.map((name, index) => [name, index]));
+    if (!Array.isArray(playSources) || playSources.length <= 1 || DRIVE_ORDER.length === 0) {
+        return playSources;
+    }
+    const orderMap = new Map(DRIVE_ORDER.map((name, index) => [name, index]));
     return [...playSources].sort((a, b) => {
         const aType = inferDriveTypeFromSourceName(a?.name || "");
         const bType = inferDriveTypeFromSourceName(b?.name || "");
@@ -443,6 +448,30 @@ function decodeCombinedPlayId(playId = "") {
     if (!String(playId).includes("|||")) return { main: String(playId || ""), meta: {} };
     const [main, metaB64] = String(playId).split("|||");
     return { main, meta: decodePlayId(metaB64 || "") };
+}
+
+function expandPanSourcesWithRoutes(playSources = []) {
+    const result = [];
+    for (const source of playSources) {
+        const driveType = inferDriveTypeFromSourceName(source?.name || "");
+        if (DRIVE_TYPE_CONFIG.length > 0 && driveType && !DRIVE_TYPE_CONFIG.includes(driveType)) {
+            continue;
+        }
+        for (const routeName of SOURCE_NAMES_CONFIG) {
+            result.push({
+                name: `${source.name}-${routeName}`,
+                episodes: (source.episodes || []).map((ep) => {
+                    const decoded = decodeCombinedPlayId(ep.playId);
+                    const meta = { ...(decoded.meta || {}), routeType: routeName, flag: `${source.name}-${routeName}` };
+                    return {
+                        name: ep.name,
+                        playId: `${decoded.main}|||${encodePlayId(meta)}`
+                    };
+                })
+            });
+        }
+    }
+    return result;
 }
 
 function decodePlayerUrl(url = "", encrypt = 0) {
@@ -590,7 +619,9 @@ async function detail(params, context) {
             }
         }
 
-        const vod_play_sources = [...collectSources, ...sortPlaySourcesByDriveOrder(netdiskSources)];
+        const sortedNetdiskSources = sortPlaySourcesByDriveOrder(netdiskSources);
+        const expandedNetdiskSources = expandPanSourcesWithRoutes(sortedNetdiskSources);
+        const vod_play_sources = [...collectSources, ...expandedNetdiskSources];
 
         logInfo("detail 完成", { videoId, sourceCount: vod_play_sources.length, episodeCount: vod_play_sources.reduce((n, item) => n + item.episodes.length, 0) });
         return {
@@ -652,9 +683,10 @@ async function play(params, context) {
         if (meta.mode === "pan-file") {
             const shareURL = normalizeShareUrl(meta.shareUrl || "");
             const fileId = String(meta.fileId || "");
+            const routeType = String(meta.routeType || "").trim() || (context?.from === "web" ? "服务端代理" : "直连");
             if (shareURL && fileId) {
                 try {
-                    const playInfo = await OmniBox.getDriveVideoPlayInfo(shareURL, fileId, playFlag || "");
+                    const playInfo = await OmniBox.getDriveVideoPlayInfo(shareURL, fileId, routeType);
                     const urlList = Array.isArray(playInfo?.url) ? playInfo.url : [];
                     return {
                         urls: urlList.map((item) => ({ name: item.name || meta.name || "播放", url: item.url })),
@@ -664,7 +696,7 @@ async function play(params, context) {
                         danmaku: playInfo?.danmaku || []
                     };
                 } catch (error) {
-                    logInfo("play 网盘直取失败", { shareURL, fileId, error: error.message });
+                    logInfo("play 网盘直取失败", { shareURL, fileId, routeType, error: error.message });
                     return {
                         parse: 0,
                         flag: playFlag,
