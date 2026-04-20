@@ -2,7 +2,7 @@
 // @author
 // @description 刮削：支持，弹幕：支持，嗅探：支持
 // @dependencies: axios, cheerio
-// @version 1.2.14
+// @version 1.2.17
 // @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/main/影视/网盘/木偶.js
 
 // 引入 OmniBox SDK
@@ -1170,6 +1170,9 @@ async function detail(params, context) {
 
           const normalizedOriginalEpisodeName = normalizeEpisodeName(file.file_name || fileName);
           const playMeta = encodePlayMeta({
+            sid: videoId,
+            fid: fileId ? `${shareURL}|${fileId}` : "",
+            v: vodName || "",
             t: vodName,
             e: normalizedOriginalEpisodeName,
           });
@@ -1385,11 +1388,11 @@ async function play(params, context) {
 
     let playMeta = {};
     let coreParts = [...idParts];
-    if (coreParts.length >= 4) {
+    if (coreParts.length >= 3) {
       const possibleMeta = coreParts[coreParts.length - 1] || "";
       try {
-        playMeta = decodeMeta(possibleMeta);
-        if (playMeta && typeof playMeta === "object" && (playMeta.v || playMeta.e || playMeta.fid || playMeta.sid)) {
+        playMeta = decodePlayMeta(possibleMeta);
+        if (playMeta && typeof playMeta === "object" && (playMeta.v || playMeta.e || playMeta.fid || playMeta.sid || playMeta.t)) {
           coreParts = coreParts.slice(0, -1);
         } else {
           playMeta = {};
