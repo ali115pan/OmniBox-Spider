@@ -2,7 +2,7 @@
 // @author https://github.com/hjdhnx/drpy-node/blob/main/spider/js/%E4%B8%83%E5%91%B3%5B%E4%BC%98%5D.js
 // @description 刮削：支持，弹幕：支持，嗅探：支持
 // @dependencies: axios, cheerio
-// @version 1.1.2
+// @version 1.1.7
 // @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/main/影视/采集/七味.js
 
 /**
@@ -341,10 +341,18 @@ function rotateHost() {
 }
 
 function fixJsonWrappedHtml(html) {
-    if (!html || typeof html !== "string") {
+    if (html == null) {
         return "";
     }
-    const trimmed = html.trim();
+    if (typeof html === "object") {
+        try {
+            return JSON.stringify(html);
+        } catch {
+            return "";
+        }
+    }
+    const raw = String(html);
+    const trimmed = raw.trim();
     if (!trimmed) {
         return "";
     }
@@ -362,6 +370,20 @@ function fixJsonWrappedHtml(html) {
         }
     }
     return trimmed;
+}
+
+function safeJsonParse(value, fallback = null) {
+    if (value == null || value === "") {
+        return fallback;
+    }
+    if (typeof value === "object") {
+        return value;
+    }
+    try {
+        return JSON.parse(String(value));
+    } catch {
+        return fallback;
+    }
 }
 
 function isAbsoluteUrl(url) {
@@ -460,11 +482,16 @@ async function requestHtmlWithFailover(pathOrUrl, options = {}) {
                 },
             });
 
-            if (html && html.includes("<html")) {
-                if (i > 0) {
-                    logInfo("站点切换成功", { from: HOSTS[startIndex], to: host });
+            if (html) {
+                const trimmed = String(html).trim();
+                const isHtml = trimmed.includes("<html") || trimmed.startsWith("<!DOCTYPE");
+                const isJson = trimmed.startsWith("{") || trimmed.startsWith("[");
+                if (isHtml || isJson) {
+                    if (i > 0) {
+                        logInfo("站点切换成功", { from: HOSTS[startIndex], to: host });
+                    }
+                    return { html, host };
                 }
-                return { html, host };
             }
 
             lastError = new Error("empty or invalid html");
@@ -817,14 +844,33 @@ async function search(params) {
     }
 
     try {
-        const path = `/vs/-------------.html?wd=${encodeURIComponent(keyword)}&page=${page}`;
-        const { html, host } = await requestHtmlWithFailover(path);
-        const list = parseVideoList(html, host);
-        logInfo("搜索完成", { keyword, page, host, count: list.length });
+        const path = `/index.php/ajax/suggest?mid=1&limit=20&wd=${encodeURIComponent(keyword)}`;
+        const { html, host } = await requestHtmlWithFailover(path, {
+            headers: {
+                Accept: "application/json, text/plain, */*",
+                "X-Requested-With": "XMLHttpRequest",
+                Referer: `${getCurrentHost()}/`,
+            },
+        });
+        const data = safeJsonParse(html, {});
+        const items = Array.isArray(data?.list) ? data.list : [];
+        const list = items.map((item) => {
+            const vodId = String(item?.id || "").trim();
+            const pic = normalizeImage(item?.pic || "", host);
+            return {
+                vod_id: vodId,
+                vod_name: String(item?.name || "").trim(),
+                vod_pic: pic,
+                vod_remarks: "",
+            };
+        }).filter((item) => item.vod_id && item.vod_name);
+        const pageCount = Number(data?.pagecount) || (list.length >= 20 ? page + 1 : page);
+        const total = Number(data?.total) || list.length;
+        logInfo("搜索完成", { keyword, page, host, count: list.length, api: path, total, pageCount });
         return {
             page,
-            pagecount: list.length >= 20 ? page + 1 : page,
-            total: list.length,
+            pagecount: pageCount,
+            total,
             list,
         };
     } catch (error) {
